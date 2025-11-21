@@ -1,0 +1,140 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+*/
+/* USER CODE END Header */
+
+#include "main.h"
+
+/* Private variables ---------------------------------------------------------*/
+uint8_t mode = 0;           // поточний режим
+uint8_t button_last = 0;    // попередній стан кнопки
+uint32_t last_debounce = 0; // захист від дребезгу
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+
+void set_leds(uint8_t d12, uint8_t d13, uint8_t d14, uint8_t d15)
+{
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, d12 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, d13 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, d14 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, d15 ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    uint32_t lastBlink = 0;
+    uint8_t step = 0;
+
+    while (1)
+    {
+        /* ----------------------- BUTTON HANDLING ------------------------ */
+        uint8_t button_now = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
+
+        if (button_now != button_last)
+        {
+            last_debounce = HAL_GetTick();
+            button_last = button_now;
+        }
+
+        if ((HAL_GetTick() - last_debounce) > 50)
+        {
+            // реагуємо на НАТИСКАННЯ (edge: 0 → 1)
+            if (button_now == 1)
+            {
+                mode = (mode + 1) % 3; // всього 3 режими
+            }
+        }
+
+        /* -------------------------- BLINKING ---------------------------- */
+        if (HAL_GetTick() - lastBlink > 200)
+        {
+            lastBlink = HAL_GetTick();
+
+            switch(mode)
+            {
+                case 0: // РЕЖИМ 1 — по колу
+                    if(step == 0) set_leds(1,0,0,0);
+                    if(step == 1) set_leds(0,1,0,0);
+                    if(step == 2) set_leds(0,0,1,0);
+                    if(step == 3) set_leds(0,0,0,1);
+                    step = (step + 1) % 4;
+                    break;
+
+                case 1: // РЕЖИМ 2 — всі разом
+                    set_leds(step, step, step, step);
+                    step = !step;
+                    break;
+
+                case 2: // РЕЖИМ 3 — альтернативно
+                    if(step == 0) set_leds(1,0,1,0);
+                    if(step == 1) set_leds(0,1,0,1);
+                    step = !step;
+                    break;
+            }
+        }
+    }
+}
+
+/* ---------------- HAL boilerplate ---------------- */
+
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    __HAL_RCC_PWR_CLK_ENABLE();
+    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+    RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+    RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+    RCC_OscInitStruct.PLL.PLLM = 16;
+    RCC_OscInitStruct.PLL.PLLN = 336;
+    RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+    RCC_OscInitStruct.PLL.PLLQ = 7;
+
+    HAL_RCC_OscConfig(&RCC_OscInitStruct);
+
+    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+                                 | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+    RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+    RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+    RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+    HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2);
+}
+
+static void MX_GPIO_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+
+    /* Button PA0 */
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    /* LEDs PD12–PD15 */
+    GPIO_InitStruct.Pin = GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+}
+
